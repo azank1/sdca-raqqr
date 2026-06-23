@@ -7,3 +7,4 @@ dist/
 *.csv
 !parity/*.json
 sdca-core.zip
+.venv/
