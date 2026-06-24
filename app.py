@@ -61,9 +61,19 @@ def risk_color(r: float) -> str:
     return "#ef4444"
 
 # ── data loading ──────────────────────────────────────────────────────────────
-@st.cache_data(ttl=3600, show_spinner="Fetching BTC data from Binance…")
-def fetch_binance() -> pd.DataFrame:
-    return sc.data.load_binance("BTCUSDT")
+@st.cache_data(ttl=3600, show_spinner="Fetching BTC price history…")
+def fetch_ohlcv() -> tuple[pd.DataFrame, str]:
+    """Try Binance; fall back to Yahoo Finance via yfinance.
+
+    Binance is geo-blocked on Streamlit Cloud (AWS US). yfinance is globally
+    accessible with no API key required.
+    """
+    try:
+        df = sc.data.load_binance("BTCUSDT")
+        return df, "Binance"
+    except Exception:
+        df = sc.data.load_yfinance("BTC-USD")
+        return df, "Yahoo Finance"
 
 @st.cache_data(show_spinner="Computing valuation table…")
 def compute_table(ohlcv_hash: str, ohlcv: pd.DataFrame) -> pd.DataFrame:
@@ -81,11 +91,13 @@ with st.sidebar:
         uploaded = st.file_uploader("CSV with date + close columns", type="csv")
         if uploaded:
             ohlcv_raw = sc.data.load_csv(uploaded)
+            data_label = "CSV"
         else:
             st.info("Upload a CSV to continue.")
             st.stop()
     else:
-        ohlcv_raw = fetch_binance()
+        ohlcv_raw, data_label = fetch_ohlcv()
+        st.caption(f"Live data via **{data_label}**")
 
     min_date = ohlcv_raw.index[0].date()
     max_date = ohlcv_raw.index[-1].date()

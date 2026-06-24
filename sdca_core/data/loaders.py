@@ -36,6 +36,43 @@ def load_csv(path, date_col="date", close_col="close") -> pd.DataFrame:
     return _normalize(df, date_col, close_col)
 
 
+def load_yfinance(ticker="BTC-USD", start="2014-01-01") -> pd.DataFrame:
+    """Fetch daily history from Yahoo Finance via yfinance.
+
+    Free, no API key required, and not geo-blocked — use as a fallback when
+    Binance is unavailable (e.g. on Streamlit Cloud / AWS US regions).
+    Requires: pip install yfinance
+    """
+    try:
+        import yfinance as yf
+    except ImportError as exc:
+        raise ImportError("yfinance is not installed. Run: pip install yfinance") from exc
+
+    raw = yf.download(ticker, start=start, auto_adjust=True, progress=False)
+    if raw.empty:
+        raise ValueError(f"yfinance returned no data for {ticker}")
+
+    # yfinance returns MultiIndex columns like ('Close', 'BTC-USD') when
+    # downloading a single ticker; flatten to simple names.
+    if isinstance(raw.columns, pd.MultiIndex):
+        raw.columns = [col[0].lower() for col in raw.columns]
+    else:
+        raw.columns = [c.lower() for c in raw.columns]
+
+    raw = raw.reset_index()
+    date_col = "Date" if "Date" in raw.columns else raw.columns[0]
+    raw[date_col] = pd.to_datetime(raw[date_col], utc=True).dt.tz_localize(None)
+    raw = raw.rename(columns={date_col: "date"})
+    return _normalize(raw, "date", "close")
+
+
+# Keep load_coingecko as an alias that delegates to load_yfinance for
+# backwards compatibility (CoinGecko free tier now requires an API key).
+def load_coingecko(coin_id: str = "bitcoin", vs_currency: str = "usd") -> pd.DataFrame:
+    """Deprecated alias — delegates to load_yfinance (CoinGecko now requires an API key)."""
+    return load_yfinance("BTC-USD" if coin_id == "bitcoin" else coin_id)
+
+
 def load_binance(symbol="BTCUSDT", interval="1d", limit=1000) -> pd.DataFrame:
     """Fetch daily klines from Binance. Paginates back via endTime to cover full
     history. Requires network access (won't work in a sandbox)."""
