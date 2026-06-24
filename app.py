@@ -123,9 +123,28 @@ with st.sidebar:
     curve_values = PRESETS[preset_name]
 
     st.divider()
+    st.subheader("MLTPI Signal")
+    mltpi_enabled = st.toggle("Enable MLTPI blend", value=False)
+    mltpi_weight  = 0.0
+    active_mltpi  = st.session_state.get("active_mltpi")
+    if mltpi_enabled:
+        if active_mltpi is not None:
+            mltpi_weight = st.slider("MLTPI weight", 0.0, 2.0, 0.8, 0.1)
+            st.caption(f"Signal covers {len(active_mltpi)} days")
+        else:
+            st.info("No signal loaded. Build one in **Signal Builder** (sidebar nav).")
+            mltpi_enabled = False
+
+    st.divider()
     st.caption("Built on [sdca-raqqr](https://github.com/azank1/sdca-raqqr)")
 
 # ── compute ───────────────────────────────────────────────────────────────────
+# Build extra_indicators list if MLTPI is active
+_extra_indicators = []
+if mltpi_enabled and active_mltpi is not None:
+    mltpi_z = (active_mltpi * 3).rename("mltpi_z")
+    _extra_indicators = [sc.Indicator("MLTPI", mltpi_z, weight=mltpi_weight)]
+
 table_full = compute_table(str(len(ohlcv_raw)), ohlcv_raw)
 
 # filtered view for charts
@@ -134,14 +153,27 @@ table = table_full[mask]
 
 # backtest (full history from backtest_start)
 @st.cache_data(show_spinner="Running backtest…")
-def run_backtest(n_rows: int, cash: float, start: str, preset: str):
-    vals = PRESETS[preset]
+def run_backtest(n_rows: int, cash: float, start: str, preset: str,
+                 mltpi_key: str = ""):
+    vals  = PRESETS[preset]
+    extra = []
+    if mltpi_key and st.session_state.get("active_mltpi") is not None:
+        sig   = st.session_state["active_mltpi"]
+        mz    = (sig * 3).rename("mltpi_z")
+        extra = [sc.Indicator("MLTPI", mz, weight=mltpi_weight)]
     return sc.backtest_curve(
         ohlcv_raw, starting_cash=cash, start=start,
-        values=vals,
+        values=vals, extra_indicators=extra or None,
     )
 
-res = run_backtest(len(ohlcv_raw), float(starting_cash), str(backtest_start), preset_name)
+# Unique key so cache invalidates when MLTPI toggles
+_bt_key = f"mltpi_{mltpi_enabled}_{mltpi_weight}" if mltpi_enabled else ""
+res = run_backtest(len(ohlcv_raw), float(starting_cash),
+                   str(backtest_start), preset_name, _bt_key)
+
+# Pure RAQQR backtest (always computed, for three-way comparison)
+res_pure = run_backtest(len(ohlcv_raw), float(starting_cash),
+                        str(backtest_start), preset_name, "")
 
 # ── current readings ──────────────────────────────────────────────────────────
 latest = table_full.iloc[-1]
@@ -164,8 +196,8 @@ k5.metric("Data through",     str(table_full.index[-1].date()))
 st.divider()
 
 # ── tabs ──────────────────────────────────────────────────────────────────────
-tab_rainbow, tab_risk, tab_backtest = st.tabs(
-    ["🌈  Rainbow Chart", "📡  Risk Signal", "📈  Backtest"]
+tab_rainbow, tab_risk, tab_combined, tab_backtest = st.tabs(
+    ["🌈  Rainbow Chart", "📡  Risk Signal", "🔀  Combined Signal", "📈  Backtest"]
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -332,7 +364,93 @@ with tab_risk:
         st.plotly_chart(risk_fig, use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — BACKTEST
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — COMBINED SIGNAL
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_combined:
+    if not mltpi_enabled or active_mltpi is None:
+        st.info(
+            "Enable the MLTPI blend in the sidebar (and build a signal in **Signal Builder**) "
+            "to see the combined view."
+        )
+    else:
+        mltpi_z_full = (active_mltpi * 3).reindex(table_full.index).ffill().fillna(0)
+
+        # ── side-by-side risk comparison ────────────────────────────────────
+        st.subheader("Pure RAQQR vs MLTPI-Blended Composite Risk")
+        comb_indicators = [
+            sc.Indicator("price", table_full["eqm_z"], weight=1.0),
+            sc.Indicator("MLTPI", mltpi_z_full, weight=mltpi_weight),
+        ]
+        blended_z    = sc.composite_z(comb_indicators)
+        blended_risk = sc.composite_risk_from_z(blended_z)
+        blended_t    = blended_risk[mask]
+        pure_risk_t  = table["composite_risk"]
+
+        cf = go.Figure()
+        cf.add_trace(go.Scatter(x=table.index, y=pure_risk_t,
+                                mode="lines", name="Pure RAQQR",
+                                line=dict(color="#58a6ff", width=1.4)))
+        cf.add_trace(go.Scatter(x=blended_t.index, y=blended_t,
+                                mode="lines", name=f"MLTPI blended (w={mltpi_weight})",
+                                line=dict(color="#f97316", width=1.6, dash="dot")))
+        for lo, hi, c in [(0,25,"rgba(34,197,94,0.06)"),
+                          (25,50,"rgba(234,179,8,0.06)"),
+                          (50,75,"rgba(249,115,22,0.06)"),
+                          (75,100,"rgba(239,68,68,0.06)")]:
+            cf.add_hrect(y0=lo, y1=hi, fillcolor=c, line_width=0)
+        cf.update_layout(template="plotly_dark", height=300,
+                         yaxis=dict(range=[0,100]), hovermode="x unified",
+                         margin=dict(t=20, b=40))
+        st.plotly_chart(cf, use_container_width=True)
+
+        # ── MLTPI H(α) panel ─────────────────────────────────────────────────
+        st.subheader("MLTPI H(α) Signal")
+        mltpi_t = active_mltpi.reindex(table.index).ffill()
+        hf = go.Figure()
+        hf.add_trace(go.Scatter(
+            x=mltpi_t.index, y=mltpi_t.values,
+            mode="lines", fill="tozeroy",
+            fillcolor="rgba(63,185,80,0.12)",
+            line=dict(color="#3fb950", width=1.4),
+            name="H(α)",
+        ))
+        hf.add_hline(y=0, line=dict(color="white", width=0.6, dash="dot"))
+        hf.update_layout(template="plotly_dark", height=220,
+                         yaxis=dict(range=[-1.1, 1.1]),
+                         margin=dict(t=10, b=40), showlegend=False)
+        st.plotly_chart(hf, use_container_width=True)
+
+        # ── confluence heatmap ────────────────────────────────────────────────
+        st.subheader("Confluence — Where Both Signals Agree")
+        raqqr_bull   = pure_risk_t < 30
+        mltpi_bull   = mltpi_t > 0.1
+        raqqr_bear   = pure_risk_t > 70
+        mltpi_bear   = mltpi_t < -0.1
+
+        confluence = pd.Series(0.0, index=pure_risk_t.index)
+        confluence[raqqr_bull & mltpi_bull]   =  1.0   # both say buy
+        confluence[raqqr_bear & mltpi_bear]   = -1.0   # both say sell
+        confluence[(raqqr_bull & mltpi_bear) |
+                   (raqqr_bear & mltpi_bull)]  =  0.0   # disagreement (grey)
+
+        conf_col = confluence.map(
+            lambda v: "#22c55e" if v > 0 else ("#ef4444" if v < 0 else "#374151")
+        )
+        heatf = go.Figure(go.Bar(
+            x=confluence.index, y=abs(confluence),
+            marker_color=conf_col.values,
+            name="Confluence",
+        ))
+        heatf.update_layout(template="plotly_dark", height=180,
+                            yaxis=dict(range=[0,1.2], visible=False),
+                            margin=dict(t=10, b=40),
+                            showlegend=False)
+        st.plotly_chart(heatf, use_container_width=True)
+        st.caption("🟢 Both say buy  |  🔴 Both say sell  |  ⬛ Disagreement")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — BACKTEST
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_backtest:
     eq = res.equity_curve
@@ -415,6 +533,83 @@ with tab_backtest:
     m6.metric("Avg Buy Price",    f"${res.avg_buy_price:,.0f}")
     m7.metric("Buy Days",         f"{res.buy_days:,}")
     m8.metric("Sell Days",        f"{res.sell_days:,}")
+
+    # ── quant ratios ─────────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Quant Ratios")
+    r = res.ratios
+    rp = res_pure.ratios
+    ra1, ra2, ra3, ra4, ra5 = st.columns(5)
+    ra1.metric("Sharpe",       f"{r['sharpe']:.2f}",
+               f"{r['sharpe']-rp['sharpe']:+.2f} vs pure" if mltpi_enabled else "")
+    ra2.metric("Sortino",      f"{r['sortino']:.2f}",
+               f"{r['sortino']-rp['sortino']:+.2f} vs pure" if mltpi_enabled else "")
+    ra3.metric("Omega",        f"{r['omega']:.2f}",
+               f"{r['omega']-rp['omega']:+.2f} vs pure" if mltpi_enabled else "")
+    ra4.metric("Calmar",       f"{r['calmar']:.2f}",
+               f"{r['calmar']-rp['calmar']:+.2f} vs pure" if mltpi_enabled else "")
+    ra5.metric("Max Drawdown", f"{r['max_drawdown_pct']:.1f}%",
+               f"{r['max_drawdown_pct']-rp['max_drawdown_pct']:+.1f}pp vs pure" if mltpi_enabled else "")
+
+    with st.expander("What do these ratios mean?"):
+        st.markdown("""
+| Ratio | Formula | Interpretation |
+|---|---|---|
+| **Sharpe** | `mean(r) / std(r) × √252` | Risk-adjusted return; >1 is good, >2 is strong |
+| **Sortino** | `mean(r) / downside_std × √252` | Like Sharpe but only penalises downside volatility |
+| **Omega** | `sum(gains) / sum(losses)` | Ratio of all positive to all negative daily returns; >1 means more won than lost |
+| **Calmar** | `ann_return / max_drawdown` | Return per unit of worst drawdown; >1 is solid |
+| **Max DD** | `min((port - peak) / peak)` | Worst peak-to-trough loss as a percentage |
+""")
+
+    # ── three-way comparison (only when MLTPI active) ────────────────────────
+    if mltpi_enabled and active_mltpi is not None:
+        st.divider()
+        st.subheader("Three-Way Equity Comparison")
+
+        eq_blend = res.equity_curve
+        eq_pure  = res_pure.equity_curve
+
+        # MLTPI-only: long when H(α) > 0, flat otherwise
+        @st.cache_data(show_spinner="Computing MLTPI-only backtest…")
+        def _mltpi_only_bt(n: int, cash: float, start: str, mw: float):
+            sig   = st.session_state.get("active_mltpi")
+            if sig is None:
+                return None
+            mz    = (sig * 3).rename("mltpi_z")
+            # Use MLTPI as sole indicator; RAQQR weight 0
+            extra = [sc.Indicator("MLTPI", mz, weight=5.0)]
+            return sc.backtest_curve(ohlcv_raw, starting_cash=cash, start=start,
+                                     extra_indicators=extra)
+
+        res_mltpi_only = _mltpi_only_bt(len(ohlcv_raw), float(starting_cash),
+                                         str(backtest_start), mltpi_weight)
+
+        lump_btc   = float(starting_cash) / float(eq_blend["price"].iloc[0])
+        lump_line  = lump_btc * eq_blend["price"]
+
+        tway = go.Figure()
+        tway.add_trace(go.Scatter(x=eq_pure.index, y=eq_pure["portfolio"],
+                                  mode="lines", name="Pure RAQQR",
+                                  line=dict(color="#58a6ff", width=1.4, dash="dash")))
+        if res_mltpi_only:
+            tway.add_trace(go.Scatter(
+                x=res_mltpi_only.equity_curve.index,
+                y=res_mltpi_only.equity_curve["portfolio"],
+                mode="lines", name="MLTPI only",
+                line=dict(color="#f97316", width=1.4, dash="dot")))
+        tway.add_trace(go.Scatter(x=eq_blend.index, y=eq_blend["portfolio"],
+                                  mode="lines", name="RAQQR + MLTPI",
+                                  line=dict(color="#3fb950", width=2.0)))
+        tway.add_trace(go.Scatter(x=lump_line.index, y=lump_line,
+                                  mode="lines", name="Lump-sum hold",
+                                  line=dict(color="rgba(255,255,255,0.3)",
+                                            width=1.2, dash="dot")))
+        tway.update_yaxes(type="log", tickprefix="$", tickformat=",.0f")
+        tway.update_layout(template="plotly_dark", height=400,
+                           legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                           hovermode="x unified", margin=dict(t=40, b=40))
+        st.plotly_chart(tway, use_container_width=True)
 
     # ── allocation curve ─────────────────────────────────────────────────────
     st.subheader(f"Allocation Curve — {preset_name} preset")

@@ -13,7 +13,7 @@ fitted optimum; the whole point of the tab is that the user reshapes it.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -59,9 +59,12 @@ class BacktestResult:
     vs_lump: float
     vs_lump_pct: float
     equity_curve: pd.DataFrame  # index=date; cols: portfolio, cash, btc, price, risk, rate, trade
+    ratios: dict = field(default_factory=dict)  # Sharpe, Sortino, Omega, Calmar, max_drawdown_pct
 
     def summary(self) -> pd.Series:
-        d = {k: v for k, v in self.__dict__.items() if k != "equity_curve"}
+        d = {k: v for k, v in self.__dict__.items()
+             if k not in ("equity_curve", "ratios")}
+        d.update(self.ratios)
         return pd.Series(d)
 
 
@@ -151,6 +154,9 @@ def run_curve_backtest(
     lump_btc = starting_cash / first
     lump_value = lump_btc * latest
 
+    from .metrics import compute_ratios
+    ratios = compute_ratios(eq)
+
     return BacktestResult(
         days=len(df),
         buy_days=buy_days,
@@ -170,4 +176,5 @@ def run_curve_backtest(
         vs_lump=portfolio - lump_value,
         vs_lump_pct=100.0 * (portfolio - lump_value) / lump_value,
         equity_curve=eq,
+        ratios=ratios,
     )
