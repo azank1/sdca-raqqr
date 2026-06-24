@@ -6,6 +6,7 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Tests](https://img.shields.io/badge/tests-10%20passed-brightgreen)
 ![Model](https://img.shields.io/badge/model-RAQQR-orange)
+[![Live Dashboard](https://img.shields.io/badge/dashboard-streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://sdca-raqqr-ndabr4wdankxgrrpep9gzk.streamlit.app/)
 
 Bitcoin valuation and DCA backtest library. Implements the **RAQQR asymmetric
 tail-curvature rainbow** model to score market risk (0–100) and simulate
@@ -13,6 +14,14 @@ accumulation/distribution strategies against historical price data.
 
 The numbers this library produces match the reference HTML artifact's default
 configuration — proven by a cross-implementation parity test, not assumed.
+
+---
+
+## Interactive Dashboard
+
+[![Open dashboard](docs/assets/dashboard.gif)](https://sdca-raqqr-ndabr4wdankxgrrpep9gzk.streamlit.app/)
+
+<sub>Live at → **[sdca-raqqr.streamlit.app](https://sdca-raqqr-ndabr4wdankxgrrpep9gzk.streamlit.app/)**</sub>
 
 ---
 
@@ -115,6 +124,16 @@ lump_return_pct       368.22
 vs_lump            356842.09
 vs_lump_pct           762.13
 ```
+
+## Dashboard screenshots
+
+| Rainbow Chart | Risk Signal | Backtest |
+|:---:|:---:|:---:|
+| ![rainbow](docs/assets/dashboard_rainbow.png) | ![risk](docs/assets/dashboard_risk.png) | ![backtest](docs/assets/dashboard_backtest.png) |
+
+Run it locally with `streamlit run app.py` or open the [live app](https://sdca-raqqr-ndabr4wdankxgrrpep9gzk.streamlit.app/).
+
+---
 
 ## Equity curve — DCA vs Lump-Sum
 
