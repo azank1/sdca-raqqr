@@ -8,3 +8,4 @@ dist/
 !parity/*.json
 sdca-core.zip
 .venv/
+docs/

@@ -19,13 +19,13 @@ configuration — proven by a cross-implementation parity test, not assumed.
 
 ## Interactive Dashboard
 
-[![Open dashboard](docs/assets/dashboard.gif)](https://sdca-raqqr-ndabr4wdankxgrrpep9gzk.streamlit.app/)
+[![Open dashboard](assets/dashboard.gif)](https://sdca-raqqr-ndabr4wdankxgrrpep9gzk.streamlit.app/)
 
 <sub>Live at → **[sdca-raqqr.streamlit.app](https://sdca-raqqr-ndabr4wdankxgrrpep9gzk.streamlit.app/)**</sub>
 
 ---
 
-![quickstart demo](docs/assets/quickstart.gif)
+![quickstart demo](assets/quickstart.gif)
 
 ---
 
@@ -129,7 +129,7 @@ vs_lump_pct           762.13
 
 | Rainbow Chart | Risk Signal | Backtest |
 |:---:|:---:|:---:|
-| ![rainbow](docs/assets/dashboard_rainbow.png) | ![risk](docs/assets/dashboard_risk.png) | ![backtest](docs/assets/dashboard_backtest.png) |
+| ![rainbow](assets/dashboard_rainbow.png) | ![risk](assets/dashboard_risk.png) | ![backtest](assets/dashboard_backtest.png) |
 
 Run it locally with `streamlit run app.py` or open the [live app](https://sdca-raqqr-ndabr4wdankxgrrpep9gzk.streamlit.app/).
 
@@ -137,7 +137,7 @@ Run it locally with `streamlit run app.py` or open the [live app](https://sdca-r
 
 ## Equity curve — DCA vs Lump-Sum
 
-![equity curve](docs/assets/equity_curve.png)
+![equity curve](assets/equity_curve.png)
 
 DCA starting from Jan 2018 with $10,000 at the default curve shape vs buying
 and holding the same amount from day one. The green area shows the performance
@@ -208,12 +208,6 @@ pytest -q
 PRs welcome. Keep `sdca_core/coefficients.py` in sync with the JS parity
 contract — run `pytest -q` before committing.
 
-To regenerate the docs assets:
-
-```bash
-python docs/plot_equity.py          # equity_curve.png
-python docs/make_quickstart_gif.py  # quickstart.gif
-```
 
 ## License
 
